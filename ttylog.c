@@ -78,8 +78,8 @@ main (int argc, char *argv[])
         {
           printf ("ttylog version %s\n", TTYLOG_VERSION);
           printf ("Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] > /path/to/logfile\n");
-          printf (" -h, --help	This help\n -v, --version	Version number\n -b, --baud	Baud rate\n");
-          printf (" -d, --device	Serial device (eg. /dev/ttyS1)\n -f, --flush	Flush output\n");
+          printf (" -h, --help  This help\n -v, --version   Version number\n -b, --baud Baud rate\n");
+          printf (" -d, --device    Serial device (eg. /dev/ttyS1)\n -f, --flush    Flush output\n");
           printf (" -s, --stamp\tPrefix each line with datestamp\n");
           printf (" -t, --timeout  How long to run, in seconds.\n");
           printf ("ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
@@ -143,7 +143,7 @@ main (int argc, char *argv[])
       {
         if (argv[i + 1] == NULL)
           {
-            printf ("%s: invalid time span %s\n", argv[0], argv[i + 1]);
+            printf ("%s: invalid time span\n", argv[0]);
             exit(0);
           }
         if (timer_create (CLOCK_REALTIME, &sevp, &timerid) == -1)
@@ -183,8 +183,8 @@ main (int argc, char *argv[])
     }
   fd = fileno (logfile);
 
-  tcgetattr (fd, &oldtio);	/* save current serial port settings */
-  bzero (&newtio, sizeof (newtio));	/* clear struct for new port settings */
+  tcgetattr (fd, &oldtio);  /* save current serial port settings */
+  bzero (&newtio, sizeof (newtio)); /* clear struct for new port settings */
 
   newtio.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
   newtio.c_iflag = IGNPAR | IGNCR;
