@@ -52,7 +52,7 @@ void print_line(char* line, int line_len, char* buffer, const char* time_stamp, 
 
 char flush = 0;
 
-char *BAUD_T[] =
+const char* BAUD_T[] =
 {"300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "2000000"};
 
 int BAUD_B[] =
@@ -79,119 +79,122 @@ main (int argc, char *argv[])
   char *timestr;
   int output_fmt = FMT_ACSII;
   int line_len_limit = sizeof(line) - 1;
+  const char* baud_str = NULL;
 
-  modem_device[0] = 0;
+  memset (modem_device, '\0', sizeof(modem_device));
 
   if (argc < 2)
     {
-      printf ("%s: no params. try %s -h\n", argv[0], argv[0]);
+      fprintf (stderr, "%s: no params. try %s -h\n", argv[0], argv[0]);
       exit (0);
     }
 
   for (i = 1; i < argc; i++)
     {
-
       if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help"))
         {
-          printf ("ttylog version %s\n", TTYLOG_VERSION);
-          printf ("Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
-          printf (" -h, --help     This help\n -v, --version   Version number\n -b, --baud Baud rate\n");
-          printf (" -d, --device   Serial device (eg. /dev/ttyS1)\n -f, --flush    Flush output\n");
-          printf (" -s, --stamp    Prefix each line with datestamp\n");
-          printf (" -t, --timeout  How long to run, in seconds.\n");
-          printf (" -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
-          printf (" -l, --limit    Limit line length.\n");
-          printf ("ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
+          fprintf (stderr, "ttylog version %s\n", TTYLOG_VERSION);
+          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
+          fprintf (stderr, " -h, --help     This help\n");
+          fprintf (stderr, " -v, --version  Version number\n");
+          fprintf (stderr, " -b, --baud     Baud rate\n");
+          fprintf (stderr, " -d, --device   Serial device (eg. /dev/ttyS1)\n");
+          fprintf (stderr, " -f, --flush    Flush output\n");
+          fprintf (stderr, " -s, --stamp    Prefix each line with datestamp\n");
+          fprintf (stderr, " -t, --timeout  How long to run, in seconds.\n");
+          fprintf (stderr, " -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
+          fprintf (stderr, " -l, --limit    Limit line length.\n");
+          fprintf (stderr, "ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
           exit (0);
         }
-
-      if (!strcmp (argv[i], "-v") || !strcmp (argv[i], "--version"))
+      else if (!strcmp (argv[i], "-v") || !strcmp (argv[i], "--version"))
         {
-          printf ("ttylog version %s\n", TTYLOG_VERSION);
-          printf ("Copyright (C) 2018 Robert James Clay <jame@rocasa.us>\n");
-          printf ("Copyright (C) 2018 Guy Shapiro <guy.shapiro@mobi-wize.com>\n");
-          printf ("Copyright (C) 2016 Donald Gordon <donald@tawherotech.nz>\n");
-          printf ("Copyright (C) 2016 Logan Rosen <loganrosen@gmail.com>\n");
-          printf ("Copyright (C) 2016 Alexander (MrMontag) Fust <alexander.fust.info@gmail.com>\n");
-          printf ("Copyright (C) 2002 Tibor Koleszar <oldw@debian.org>\n");
-          printf ("License GPLv2+: <http://www.gnu.org/licenses/old-licenses/gpl-2.0.html>\n");
-          printf ("This is free software: you are free to change and redistribute it.\n");
-          printf ("There is NO WARRANTY, to the extent permitted by law.\n\n");
+          fprintf (stderr, "ttylog version %s\n", TTYLOG_VERSION);
+          fprintf (stderr, "Copyright (C) 2018 Robert James Clay <jame@rocasa.us>\n");
+          fprintf (stderr, "Copyright (C) 2018 Guy Shapiro <guy.shapiro@mobi-wize.com>\n");
+          fprintf (stderr, "Copyright (C) 2016 Donald Gordon <donald@tawherotech.nz>\n");
+          fprintf (stderr, "Copyright (C) 2016 Logan Rosen <loganrosen@gmail.com>\n");
+          fprintf (stderr, "Copyright (C) 2016 Alexander (MrMontag) Fust <alexander.fust.info@gmail.com>\n");
+          fprintf (stderr, "Copyright (C) 2002 Tibor Koleszar <oldw@debian.org>\n");
+          fprintf (stderr, "License GPLv2+: <http://www.gnu.org/licenses/old-licenses/gpl-2.0.html>\n");
+          fprintf (stderr, "This is free software: you are free to change and redistribute it.\n");
+          fprintf (stderr, "There is NO WARRANTY, to the extent permitted by law.\n\n");
           exit (0);
         }
-
-      if (!strcmp (argv[i], "-f") || !strcmp (argv[i], "--flush"))
+      else if (!strcmp (argv[i], "-f") || !strcmp (argv[i], "--flush"))
         {
           flush = 1;
         }
-
-      if (!strcmp (argv[i], "-s") || !strcmp (argv[i], "--stamp"))
+      else if (!strcmp (argv[i], "-s") || !strcmp (argv[i], "--stamp"))
         {
           stamp = 1;
         }
-
-      if (!strcmp (argv[i], "-b") || !strcmp (argv[i], "--baud"))
+      else if (!strcmp (argv[i], "-b") || !strcmp (argv[i], "--baud"))
         {
-          if (argv[i + 1] != NULL)
+          if ((i + 1) >= argc)
             {
-              for (j = 0; j < BAUDN; j++)
-                if (!strcmp (argv[i + 1], BAUD_T[j]))
-                  baud = j;
-            }
-          if (baud == -1)
-            {
-              printf ("%s: invalid baud rate %s\n", argv[0], argv[i + 1]);
+              fprintf (stderr, "%s: baud rate not specified\n", argv[0]);
               exit (0);
             }
+
+          baud_str = argv[i + 1];
+          i++;
+          for (j = 0; j < BAUDN; j++)
+          {
+            if (!strcmp (baud_str, BAUD_T[j]))
+              {
+                baud = j;
+                break;
+              }
+          }
         }
+      else if (!strcmp (argv[i], "-d") || !strcmp (argv[i], "--device"))
+        {
+          if ((i + 1) >= argc)
+            {
+              fprintf (stderr, "%s: serial device not specified\n", argv[0]);
+              exit(0);
+            }
 
-    if (!strcmp (argv[i], "-d") || !strcmp (argv[i], "--device"))
-      {
-        if (argv[i + 1] != NULL)
-          {
-            memset (modem_device, '\0', sizeof(modem_device));
-            strncpy (modem_device, argv[i + 1], sizeof(modem_device)-1);
-            modem_device[(sizeof(modem_device)-1)] = '\0';
-          }
-        else
-          {
-          }
-      }
+          strncpy (modem_device, argv[i + 1], sizeof(modem_device) - 1);
+          i++;
+        }
+      else if (!strcmp (argv[i], "-t") || !strcmp (argv[i], "--timeout"))
+        {
+          if ((i + 1) >= argc)
+            {
+              fprintf (stderr, "%s: invalid time span\n", argv[0]);
+              exit(0);
+            }
+          if (timer_create (CLOCK_REALTIME, &sevp, &timerid) == -1)
+            {
+              fprintf (stderr, "%s: unable to create timer: %s\n", argv[0], strerror(errno));
+              exit (0);
+            }
+          struct itimerspec new_value;
+          new_value.it_interval.tv_sec = 0;
+          new_value.it_interval.tv_nsec = 0;
+          int sec = atoi(argv[i + 1]);
+          if (!sec)
+            {
+              fprintf (stderr, "%s: invalid time span %s\n", argv[0], argv[i + 1]);
+              exit(0);
+            }
+          new_value.it_value.tv_sec = atoi(argv[i + 1]);
+          new_value.it_value.tv_nsec = 0;
+          if (timer_settime(timerid, 0, &new_value, NULL) == -1)
+            {
+              fprintf (stderr, "%s: unable to set timer time: %s\n", argv[0], strerror(errno));
+              exit (0);
+            }
 
-    if (!strcmp (argv[i], "-t") || !strcmp (argv[i], "--timeout"))
-      {
-        if (argv[i + 1] == NULL)
-          {
-            printf ("%s: invalid time span\n", argv[0]);
-            exit(0);
-          }
-        if (timer_create (CLOCK_REALTIME, &sevp, &timerid) == -1)
-          {
-            printf ("%s: unable to create timer: %s\n", argv[0], strerror(errno));
-            exit (0);
-          }
-        struct itimerspec new_value;
-        new_value.it_interval.tv_sec = 0;
-        new_value.it_interval.tv_nsec = 0;
-        int sec = atoi(argv[i + 1]);
-        if (!sec)
-          {
-            printf ("%s: invalid time span %s\n", argv[0], argv[i + 1]);
-            exit(0);
-          }
-        new_value.it_value.tv_sec = atoi(argv[i + 1]);
-        new_value.it_value.tv_nsec = 0;
-        if (timer_settime(timerid, 0, &new_value, NULL) == -1)
-          {
-            printf ("%s: unable to set timer time: %s\n", argv[0], strerror(errno));
-            exit (0);
-          }
-      }
-      if (!strcmp (argv[i], "-F") || !strcmp (argv[i], "--format"))
+          i++;
+        }
+      else if (!strcmp (argv[i], "-F") || !strcmp (argv[i], "--format"))
         {
           if ((i + 1) >= argc)
           {
-            printf ("%s: output format not specified\n", argv[0]);
+            fprintf (stderr, "%s: output format not specified\n", argv[0]);
             exit(0);
           }
 
@@ -207,7 +210,7 @@ main (int argc, char *argv[])
             }
           i++;
         }
-      if (!strcmp (argv[i], "-l") || !strcmp (argv[i], "--limit"))
+      else if (!strcmp (argv[i], "-l") || !strcmp (argv[i], "--limit"))
         {
           if ((i + 1) >= argc)
           {
@@ -227,15 +230,27 @@ main (int argc, char *argv[])
         }
     }
 
+  if (baud_str == NULL)
+    {
+      fprintf (stderr, "%s: baud rate not specified\n", argv[0]);
+      exit (0);
+    }
+
+  if (baud == -1)
+    {
+      fprintf (stderr, "%s: invalid baud rate %s\n", argv[0], baud_str);
+      exit (0);
+    }
+
   if (!strlen(modem_device)) {
-    printf ("%s: no device is set. Use %s -h for more information.\n", argv[0], argv[0]);
+    fprintf (stderr, "%s: no device is set. Use %s -h for more information.\n", argv[0], argv[0]);
     exit (0);
   }
 
   logfile = fopen (modem_device, "rb");
   if (logfile == NULL)
     {
-      printf ("%s: invalid device %s\n", argv[0], modem_device);
+      fprintf (stderr, "%s: invalid device %s\n", argv[0], modem_device);
       exit (0);
     }
   fd = fileno (logfile);
