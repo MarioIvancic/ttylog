@@ -37,6 +37,15 @@
 
 #define BAUDN 13
 
+// constants for output format
+enum
+{
+  FMT_ACSII = 0,
+  FMT_hex = 1,
+  FMT_HEX = 2,
+  FMT_RAW = 3,
+};
+
 char flush = 0;
 
 char *BAUD_T[] =
@@ -62,6 +71,7 @@ main (int argc, char *argv[])
   time_t rawtime;
   struct tm *timeinfo;
   char *timestr;
+  int output_fmt = FMT_ACSII;
 
   modem_device[0] = 0;
 
@@ -82,6 +92,7 @@ main (int argc, char *argv[])
           printf (" -d, --device    Serial device (eg. /dev/ttyS1)\n -f, --flush    Flush output\n");
           printf (" -s, --stamp\tPrefix each line with datestamp\n");
           printf (" -t, --timeout  How long to run, in seconds.\n");
+          printf (" -F, --format Set output format to one of h[ex], H[EX], a[scii], r[aw].\n");
           printf ("ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
           exit (0);
         }
@@ -168,6 +179,25 @@ main (int argc, char *argv[])
             exit (0);
           }
       }
+      if (!strcmp (argv[i], "-F") || !strcmp (argv[i], "--format"))
+        {
+          if ((i + 1) >= argc)
+          {
+            printf ("%s: output format not specified\n", argv[0]);
+            exit(0);
+          }
+
+          int f = argv[i + 1][0];
+          if(f == 'a') output_fmt = FMT_ACSII;
+          else if(f == 'h') output_fmt = FMT_hex;
+          else if(f == 'H') output_fmt = FMT_HEX;
+          else if(f == 'r') output_fmt = FMT_RAW;
+          else
+            {
+              printf ("%s: invalid output format '%s'\n", argv[0], argv[i + 1]);
+              exit(0);
+            }
+        }
     }
 
   if (!strlen(modem_device)) {
