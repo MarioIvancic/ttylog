@@ -3,3 +3,6 @@ obj
 build
 config.h
 ttylog.cbp
+*.layout
+*.depend
+

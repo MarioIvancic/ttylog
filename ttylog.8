@@ -3,7 +3,7 @@
 ttylog \- serial device logger
 .SH SYNOPSIS
 .B ttylog
-[-b|--baud] [-d|--device] [-f|--flush] [-t|--timeout] > /path/to/logfile
+[-b|--baud] [-d|--device] [-f|--flush] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile
 .PP
 If you are not using the timeout option, you can stop it running by pressing a
 ctrl-c when it's going to the screen or doing "kill -HUP nnnn" (where nnnn is
@@ -34,6 +34,16 @@ Output buffers are flushed after every write.
 .TP
 .B -t --timeout
 How long to run ttylog, in seconds.
+.B -F --format
+Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].
+Output format ascii is the same as in previous versions of ttylog, ttylog expects
+EOL characters in the strem.
+Output format hex is for HEX output using lowercase abcdef characters.
+Output format HEX is for HEX output using uppercase ABCDEF characters.
+Output format raw is the same as ascii, but fread() is used instead fgets().
+.B -l --limit
+Limit line length.
+If format is hex or HEX this is actually a byte count limit, not line length limit.
 .SH AUTHOR
 This manual page was originally written by Tibor Koleszar <t.koleszar@somogy.hu>,
 for the Debian GNU/Linux system.  Modifications and updates written by

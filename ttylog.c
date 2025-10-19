@@ -37,14 +37,18 @@
 
 #define BAUDN 13
 
-// constants for output format
+/* Constants for output format. */
 enum
 {
-  FMT_ACSII = 0,
-  FMT_hex = 1,
-  FMT_HEX = 2,
-  FMT_RAW = 3,
+  FMT_ACSII = 0,  /* Old ttylog ascii output format. */
+  FMT_HEX_LC = 1, /* HEX output using lowercase abcdef characters. */
+  FMT_HEX_UC = 2, /* HEX output using uppercase ABCDEF characters. */
+  FMT_RAW = 3,    /* Raw output format, EOL character is not added by ttylog. */
 };
+
+/* Function that prints line in specified output format. Timestamp is optional.
+   Buffer should be at least 4 times the line length. */
+void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt);
 
 char flush = 0;
 
@@ -66,12 +70,15 @@ main (int argc, char *argv[])
   sevp.sigev_notify = SIGEV_SIGNAL;
   sevp.sigev_signo = SIGINT;
   int fd;
-  char line[1024], modem_device[512];
+  char line[1024];
+  char buffer[4 * sizeof(line)];
+  char modem_device[512];
   struct termios oldtio, newtio;
   time_t rawtime;
   struct tm *timeinfo;
   char *timestr;
   int output_fmt = FMT_ACSII;
+  int line_len_limit = sizeof(line) - 1;
 
   modem_device[0] = 0;
 
@@ -87,12 +94,13 @@ main (int argc, char *argv[])
       if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help"))
         {
           printf ("ttylog version %s\n", TTYLOG_VERSION);
-          printf ("Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] > /path/to/logfile\n");
-          printf (" -h, --help  This help\n -v, --version   Version number\n -b, --baud Baud rate\n");
-          printf (" -d, --device    Serial device (eg. /dev/ttyS1)\n -f, --flush    Flush output\n");
-          printf (" -s, --stamp\tPrefix each line with datestamp\n");
+          printf ("Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
+          printf (" -h, --help     This help\n -v, --version   Version number\n -b, --baud Baud rate\n");
+          printf (" -d, --device   Serial device (eg. /dev/ttyS1)\n -f, --flush    Flush output\n");
+          printf (" -s, --stamp    Prefix each line with datestamp\n");
           printf (" -t, --timeout  How long to run, in seconds.\n");
-          printf (" -F, --format Set output format to one of h[ex], H[EX], a[scii], r[aw].\n");
+          printf (" -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
+          printf (" -l, --limit    Limit line length.\n");
           printf ("ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
           exit (0);
         }
@@ -189,14 +197,33 @@ main (int argc, char *argv[])
 
           int f = argv[i + 1][0];
           if(f == 'a') output_fmt = FMT_ACSII;
-          else if(f == 'h') output_fmt = FMT_hex;
-          else if(f == 'H') output_fmt = FMT_HEX;
-          else if(f == 'r') output_fmt = FMT_RAW;
+          else if(f == 'h') { output_fmt = FMT_HEX_LC; }
+          else if(f == 'H') { output_fmt = FMT_HEX_UC; }
+          else if(f == 'r') { output_fmt = FMT_RAW; }
           else
             {
-              printf ("%s: invalid output format '%s'\n", argv[0], argv[i + 1]);
+              fprintf (stderr, "%s: invalid output format '%s'\n", argv[0], argv[i + 1]);
               exit(0);
             }
+          i++;
+        }
+      if (!strcmp (argv[i], "-l") || !strcmp (argv[i], "--limit"))
+        {
+          if ((i + 1) >= argc)
+          {
+            fprintf (stderr, "%s: line length limit not specified\n", argv[0]);
+            exit(0);
+          }
+
+          int len = atoi(argv[i + 1]);
+          if (!len)
+          {
+            fprintf (stderr, "%s: invalid line length limit %s\n", argv[0], argv[i + 1]);
+            exit(0);
+          }
+
+          line_len_limit = len;
+          i++;
         }
     }
 
@@ -213,27 +240,31 @@ main (int argc, char *argv[])
     }
   fd = fileno (logfile);
 
-  tcgetattr (fd, &oldtio);  /* save current serial port settings */
-  bzero (&newtio, sizeof (newtio)); /* clear struct for new port settings */
+  /* Check are we connected to serial port and if yes, save current serial port settings */
+  int serial_port = (0 == tcgetattr (fd, &oldtio));
+  if(serial_port)
+    {
+      bzero (&newtio, sizeof (newtio)); /* clear struct for new port settings */
 
-  newtio.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
-  newtio.c_iflag = IGNPAR | IGNCR;
-  newtio.c_oflag = 0;
-  newtio.c_lflag = ICANON;
-  /* Only truly portable method of setting speed. */
-  cfsetispeed (&newtio, BAUD_B[baud]);
-  cfsetospeed (&newtio, BAUD_B[baud]);
+      newtio.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
+      newtio.c_iflag = IGNPAR | IGNCR;
+      newtio.c_oflag = 0;
+      newtio.c_lflag = ICANON;
+      /* Only truly portable method of setting speed. */
+      cfsetispeed (&newtio, BAUD_B[baud]);
+      cfsetospeed (&newtio, BAUD_B[baud]);
 
-  tcflush (fd, TCIFLUSH);
-  tcsetattr (fd, TCSANOW, &newtio);
+      tcflush (fd, TCIFLUSH);
+      tcsetattr (fd, TCSANOW, &newtio);
 
-  /* Clear the device */
-  {
-    int flags = fcntl (fd, F_GETFL, 0);
-    fcntl (fd, F_SETFL, flags | O_NONBLOCK);
-    while (fgets (line, 1024, logfile) );
-    fcntl (fd, F_SETFL, flags);
-  }
+      /* Clear the device */
+      {
+        int flags = fcntl (fd, F_GETFL, 0);
+        fcntl (fd, F_SETFL, flags | O_NONBLOCK);
+        while (fread (line, 1, sizeof(line), logfile) > 0 );
+        fcntl (fd, F_SETFL, flags);
+      }
+    }
 
   if (flush)
     setbuf(stdout, NULL);
@@ -245,20 +276,36 @@ main (int argc, char *argv[])
       retval = select (fd + 1, &rfds, NULL, NULL, NULL);
       if (retval > 0)
         {
-          if (!fgets (line, 1024, logfile))
+          size_t len = 0;
+          if(output_fmt == FMT_ACSII)
             {
-              if (ferror (logfile)) { break; }
-            }
-          if (stamp)
-            {
-              time(&rawtime);
-              timeinfo = localtime(&rawtime);
-              timestr = asctime(timeinfo);
-              timestr[strlen(timestr) - 1] = 0;
-              printf ("[%s] %s", timestr, line);
+              if (!fgets (line, line_len_limit + 1, logfile))
+                {
+                  if (ferror (logfile)) { break; }
+                  if (feof (logfile)) { break; } /* Used with files, for testing. */
+                }
             } else {
-              fputs (line, stdout);
+              len = fread (line, 1, line_len_limit, logfile);
+              if (!len)
+                {
+                  if (ferror (logfile)) { break; }
+                  if (feof (logfile)) { break; }
+                }
+              line[len - 1] = 0;
             }
+
+            if (stamp)
+              {
+                time(&rawtime);
+                timeinfo = localtime(&rawtime);
+                timestr = asctime(timeinfo);
+                timestr[strlen(timestr) - 1] = 0;
+              } else {
+                timestr = NULL;
+              }
+
+            if(!len){ len = strlen(line); }
+            print_line(line, len, buffer, timestr, output_fmt);
 
           if (flush) { fflush(stdout); }
         }
@@ -266,7 +313,48 @@ main (int argc, char *argv[])
     }
 
   fclose (logfile);
-  tcsetattr (fd, TCSANOW, &oldtio);
+  if(serial_port) { tcsetattr (fd, TCSANOW, &oldtio); }
   return 0;
+}
 
+/* Function that prints line in specified output format. Timestamp is optional.
+   Buffer should be at least 4 times the line length. */
+void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt)
+{
+  static const char* hex_chars_lc = "0123456789abcdef";
+  static const char* hex_chars_uc = "0123456789ABCDEF";
+
+  if(fmt == FMT_ACSII || fmt == FMT_RAW)
+    {
+      if (time_stamp)
+        {
+          /* If timestamps are printed we have to be sure that timestamp is at
+          the beginning of the line. */
+          if(line[line_len - 1] == '\n') { line[line_len - 1] = 0; }
+
+          printf ("[%s] %s\n", time_stamp, line);
+        } else {
+          fputs (line, stdout);
+        }
+    } else if(fmt == FMT_HEX_LC || fmt == FMT_HEX_UC) {
+      int buff_len = 0;
+      const char* hex_chars = (fmt == FMT_HEX_LC) ? hex_chars_lc : hex_chars_uc;
+      for(int i = 0; i < line_len; i++)
+        {
+            unsigned char d = line[i];
+            buffer[buff_len++] = hex_chars[(d >> 4) & 0x0F];
+            buffer[buff_len++] = hex_chars[d & 0x0F];
+            buffer[buff_len++] = ' ';
+        }
+
+      buffer[buff_len++] = '\n';
+      buffer[buff_len] = 0;
+
+      if (time_stamp)
+        {
+          printf ("[%s] %s", time_stamp, buffer);
+        } else {
+          fputs (buffer, stdout);
+        }
+    }
 }
