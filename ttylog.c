@@ -46,25 +46,23 @@ enum
   FMT_RAW = 3,    /* Raw output format, EOL character is not added by ttylog. */
 };
 
+
+
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
 void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt);
 
-char flush = 0;
-
-const char* BAUD_T[] =
-{"300", "1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600", "2000000"};
-
-int BAUD_B[] =
-{B300, B1200, B2400, B4800, B9600, B19200, B38400, B57600, B115200, B230400, B460800, B921600, B2000000};
 
 int
 main (int argc, char *argv[])
 {
   FILE *logfile;
   fd_set rfds;
-  int retval, i, j, baud = -1;
+  int retval;
+  int i;
+  speed_t baud = 0;
   int stamp = 0;
+  int flush = 0;
   timer_t timerid;
   struct sigevent sevp;
   sevp.sigev_notify = SIGEV_SIGNAL;
@@ -80,6 +78,10 @@ main (int argc, char *argv[])
   int output_fmt = FMT_ACSII;
   int line_len_limit = sizeof(line) - 1;
   const char* baud_str = NULL;
+  int data_bits = 8;  /* 7 or 8 data bits. */
+  int stop_bits = 1;  /* 1 or 2 stop bits. */
+  int parity = 'N';   /* No parity (N), Even (E), Odd (O), Mark (M) or Space (S) */
+  const char* port_mode = "8N1";
 
   memset (modem_device, '\0', sizeof(modem_device));
 
@@ -94,10 +96,11 @@ main (int argc, char *argv[])
       if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help"))
         {
           fprintf (stderr, "ttylog version %s\n", TTYLOG_VERSION);
-          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
+          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
           fprintf (stderr, " -h, --help     This help\n");
           fprintf (stderr, " -v, --version  Version number\n");
           fprintf (stderr, " -b, --baud     Baud rate\n");
+          fprintf (stderr, " -m, --mode     Serial port mode (default: 8N1)\n");
           fprintf (stderr, " -d, --device   Serial device (eg. /dev/ttyS1)\n");
           fprintf (stderr, " -f, --flush    Flush output\n");
           fprintf (stderr, " -s, --stamp    Prefix each line with datestamp\n");
@@ -133,26 +136,76 @@ main (int argc, char *argv[])
         {
           if ((i + 1) >= argc)
             {
-              fprintf (stderr, "%s: baud rate not specified\n", argv[0]);
+              fprintf (stderr, "%s: baud rate not is specified\n", argv[0]);
               exit (0);
             }
 
           baud_str = argv[i + 1];
           i++;
-          for (j = 0; j < BAUDN; j++)
+          long long b = strtoll(baud_str, NULL, 10);
+          switch(b)
           {
-            if (!strcmp (baud_str, BAUD_T[j]))
-              {
-                baud = j;
-                break;
-              }
+            case 300: baud = B300; break;
+            case 600: baud = B600; break;
+            case 1200: baud = B1200; break;
+            case 2400: baud = B2400; break;
+            case 4800: baud = B4800; break;
+            case 9600: baud = B9600; break;
+            case 19200: baud = B19200; break;
+#if defined(B28800)
+            case 28800: baud = B28800; break;
+#endif // defined
+            case 38400: baud = B38400; break;
+            case 57600: baud = B57600; break;
+#if defined(B115200)
+            case 115200: baud = B115200; break;
+#endif // defined
+#if defined(B230400)
+            case 230400: baud = B230400; break;
+#endif // defined
+#if defined(B460800)
+            case 460800: baud = B460800; break;
+#endif // defined
+#if defined(B500000)
+            case 500000: baud = B500000; break;
+#endif // defined
+#if defined(B576000)
+            case 576000: baud = B576000; break;
+#endif // defined
+#if defined(B921600)
+            case 921600: baud = B921600; break;
+#endif // defined
+#if defined(B1000000)
+            case 1000000: baud = B1000000; break;
+#endif // defined
+#if defined(B1152000)
+            case 1152000: baud = B1152000; break;
+#endif // defined
+#if defined(B1500000)
+            case 1500000: baud = B1500000; break;
+#endif // defined
+#if defined(B2000000)
+            case 2000000: baud = B2000000; break;
+#endif // defined
+#if defined(B2500000)
+            case 2500000: baud = B2500000; break;
+#endif // defined
+#if defined(B3000000)
+            case 3000000: baud = B3000000; break;
+#endif // defined
+#if defined(B3500000)
+            case 3500000: baud = B3500000; break;
+#endif // defined
+#if defined(B4000000)
+            case 4000000: baud = B4000000; break;
+#endif // defined
           }
         }
       else if (!strcmp (argv[i], "-d") || !strcmp (argv[i], "--device"))
         {
           if ((i + 1) >= argc)
             {
-              fprintf (stderr, "%s: serial device not specified\n", argv[0]);
+              fprintf (stderr, "%s: serial device is not specified\n", argv[0]);
               exit(0);
             }
 
@@ -194,7 +247,7 @@ main (int argc, char *argv[])
         {
           if ((i + 1) >= argc)
           {
-            fprintf (stderr, "%s: output format not specified\n", argv[0]);
+            fprintf (stderr, "%s: output format is not specified\n", argv[0]);
             exit(0);
           }
 
@@ -214,7 +267,7 @@ main (int argc, char *argv[])
         {
           if ((i + 1) >= argc)
           {
-            fprintf (stderr, "%s: line length limit not specified\n", argv[0]);
+            fprintf (stderr, "%s: line length limit is not specified\n", argv[0]);
             exit(0);
           }
 
@@ -228,15 +281,53 @@ main (int argc, char *argv[])
           line_len_limit = len;
           i++;
         }
+      else if (!strcmp (argv[i], "-m") || !strcmp (argv[i], "--mode"))
+        {
+          if ((i + 1) >= argc)
+          {
+            fprintf (stderr, "%s: serial port mode is not specified\n", argv[0]);
+            exit(0);
+          }
+
+          port_mode = argv[i + 1];
+          i++;
+
+          if(port_mode[0] == '7') { data_bits = 7; }
+          else if(port_mode[0] == '8') { data_bits = 8; }
+          else
+            {
+              fprintf (stderr, "%s: invalid serial port mode %s: invalid data bits.\n", argv[0], port_mode);
+              exit(0);
+            }
+
+          if(port_mode[1] == 'N') { parity = 'N'; }
+          else if(port_mode[1] == 'E') { parity = 'E'; }
+          else if(port_mode[1] == 'O') { parity = 'O'; }
+          else if(port_mode[1] == 'M') { parity = 'M'; }
+          else if(port_mode[1] == 'S') { parity = 'S'; }
+          else
+            {
+              fprintf (stderr, "%s: invalid serial port mode %s: invalid parity.\n", argv[0], port_mode);
+              exit(0);
+            }
+
+          if(port_mode[2] == '1') { stop_bits = 1; }
+          else if(port_mode[2] == '2') { stop_bits = 2; }
+          else
+            {
+              fprintf (stderr, "%s: invalid serial port mode %s: invalid stop bits.\n", argv[0], port_mode);
+              exit(0);
+            }
+        }
     }
 
   if (baud_str == NULL)
     {
-      fprintf (stderr, "%s: baud rate not specified\n", argv[0]);
+      fprintf (stderr, "%s: baud rate is not specified\n", argv[0]);
       exit (0);
     }
 
-  if (baud == -1)
+  if (baud == 0)
     {
       fprintf (stderr, "%s: invalid baud rate %s\n", argv[0], baud_str);
       exit (0);
@@ -259,15 +350,66 @@ main (int argc, char *argv[])
   int serial_port = (0 == tcgetattr (fd, &oldtio));
   if(serial_port)
     {
-      bzero (&newtio, sizeof (newtio)); /* clear struct for new port settings */
+      memset (&newtio, 0, sizeof (newtio)); /* clear struct for new port settings */
 
-      newtio.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
-      newtio.c_iflag = IGNPAR | IGNCR;
+      /* Enable RTS/CTS (hardware) flow control. */
+      /* newtio.c_cflag |= CRTSCTS; */
+
+      /* Character size mask. */
+      if(data_bits == 7) { newtio.c_cflag |= CS7; }
+      else { newtio.c_cflag |= CS8; }
+
+      /* Ignore modem control lines. */
+      newtio.c_cflag |= CLOCAL;
+
+      /* Enable receiver. */
+      newtio.c_cflag |= CREAD;
+
+      /* Set stop bits. */
+      if(stop_bits == 2) { newtio.c_cflag |= CSTOPB; }
+
+      if(parity == 'E')
+        {
+          newtio.c_cflag &= ~(PARODD | CMSPAR);
+          newtio.c_cflag |= PARENB;
+        }
+      else if(parity == 'O')
+        {
+          newtio.c_cflag |= PARENB | PARODD;
+          newtio.c_cflag &= ~CMSPAR;
+        }
+      else if(parity == 'M')
+        {
+          newtio.c_cflag |= PARENB | PARODD | CMSPAR;
+        }
+      else if(parity == 'S')
+        {
+          newtio.c_cflag |= PARENB | CMSPAR;
+          newtio.c_cflag &= ~PARODD;
+        }
+
+      /* Ignore framing errors and parity errors. */
+      newtio.c_iflag |= IGNPAR;
+      /* Ignore carriage return on input. */
+      newtio.c_iflag |= IGNCR;
+      /* Ignore BREAK condition on input. */
+      newtio.c_iflag |= IGNBRK;
+
       newtio.c_oflag = 0;
-      newtio.c_lflag = ICANON;
+
+      if(output_fmt == FMT_ACSII)
+        {
+          /* Enable canonical mode. */
+          newtio.c_lflag = ICANON;
+        }
+
+      /* Set blocking read, no timeouts. */
+      newtio.c_cc[VTIME] = 0;
+      newtio.c_cc[VMIN] = 1;
+
       /* Only truly portable method of setting speed. */
-      cfsetispeed (&newtio, BAUD_B[baud]);
-      cfsetospeed (&newtio, BAUD_B[baud]);
+      cfsetispeed (&newtio, baud);
+      cfsetospeed (&newtio, baud);
 
       tcflush (fd, TCIFLUSH);
       tcsetattr (fd, TCSANOW, &newtio);
