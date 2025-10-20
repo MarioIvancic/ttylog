@@ -3,7 +3,7 @@
 ttylog \- serial device logger
 .SH SYNOPSIS
 .B ttylog
-[-b|--baud] [-d|--device] [-f|--flush] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile
+[-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile
 .PP
 If you are not using the timeout option, you can stop it running by pressing a
 ctrl-c when it's going to the screen or doing "kill -HUP nnnn" (where nnnn is
@@ -22,9 +22,19 @@ Displays a little help
 .B -v, --version
 Version number of ttylog plus Copyright information
 .TP
+.B -s --stamp
+Prefix each line with timestamp, like 'Mon Oct 20 21:13:53 2025'.
+.TP
 .B -b, --baud
-Baud rate of the device. Available baud rates:
-300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, and 2000000
+Baud rate of the device. Available standard baud rates:
+300, 1200, 2400, 4800, 9600, 19200, 38400, 57600
+Additional baud rates, available if supported by the system:
+28800, 115200, 230400, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000, 2000000, 2500000, 3000000, 3500000, 4000000.
+.TP
+.B -m --mode
+Set serial port mode. Default mode is 8N1 (8 data bits, no parity, 1 stop bits).
+Possible options are: 7 or 8 for data bits, 1 or 2 for stop bits.
+For parity: N (no parity), E (even parity), O (odd parity), M (mark parity), S (space parity).
 .TP
 .B -d --device
 The serial device. For example /dev/ttyS1
@@ -34,6 +44,7 @@ Output buffers are flushed after every write.
 .TP
 .B -t --timeout
 How long to run ttylog, in seconds.
+.TP
 .B -F --format
 Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].
 Output format ascii is the same as in previous versions of ttylog, ttylog expects
@@ -41,6 +52,7 @@ EOL characters in the strem.
 Output format hex is for HEX output using lowercase abcdef characters.
 Output format HEX is for HEX output using uppercase ABCDEF characters.
 Output format raw is the same as ascii, but fread() is used instead fgets().
+.TP
 .B -l --limit
 Limit line length.
 If format is hex or HEX this is actually a byte count limit, not line length limit.
