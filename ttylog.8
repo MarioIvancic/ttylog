@@ -3,7 +3,7 @@
 ttylog \- serial device logger
 .SH SYNOPSIS
 .B ttylog
-[-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile
+[-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile
 .PP
 If you are not using the timeout option, you can stop it running by pressing a
 ctrl-c when it's going to the screen or doing "kill -HUP nnnn" (where nnnn is
@@ -22,9 +22,6 @@ Displays a little help
 .B -v, --version
 Version number of ttylog plus Copyright information
 .TP
-.B -s --stamp
-Prefix each line with timestamp, like 'Mon Oct 20 21:13:53 2025'.
-.TP
 .B -b, --baud
 Baud rate of the device. Available standard baud rates:
 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600
@@ -41,6 +38,13 @@ The serial device. For example /dev/ttyS1
 .TP
 .B -f --flush
 Output buffers are flushed after every write.
+.TP
+.B -s --stamp
+Prefix each line with timestamp. Timestamp format can be none, old, iso, ms, us.
+In case of no format, old format is assumed, like 'WDAY MON DD HH:mm:ss YYYY'.
+The iso format is ISO8601, like 'YYYY-MM-DDTHH:mm:ss.sss'.
+The ms format is number of milliseconds (9 digits) from the program starup, like 'nnn.nnn.nnn'.
+The us format is number of microseconds (12 digits) from the program starup, like 'nnn.nnn.nnn.nnn'.
 .TP
 .B -t --timeout
 How long to run ttylog, in seconds.

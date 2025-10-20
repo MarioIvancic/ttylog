@@ -47,11 +47,23 @@ enum
 };
 
 
+/* Constants for timestamp format. */
+enum
+{
+  FMT_OLD = 1,  /* Old timestamp format, like Mon Oct 20 21:13:53 2025. */
+  FMT_ISO = 2,  /* ISO8601 timestamp format, YYYY-MM-DDTHH:mm:ss.sss. */
+  FMT_MS = 3,   /* Relative time in milliseconds from program start. */
+  FMT_US = 4,   /* Relative time in microseconds from program start. */
+};
+
 
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
 void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt);
 
+
+/* Function to create timestamp according to timestamp format fmt. */
+const char* make_timestamp(int fmt, const struct timespec* start_time);
 
 int
 main (int argc, char *argv[])
@@ -72,9 +84,7 @@ main (int argc, char *argv[])
   char buffer[4 * sizeof(line)];
   char modem_device[512];
   struct termios oldtio, newtio;
-  time_t rawtime;
-  struct tm *timeinfo;
-  char *timestr;
+  const char* timestr;
   int output_fmt = FMT_ACSII;
   int line_len_limit = sizeof(line) - 1;
   const char* baud_str = NULL;
@@ -82,6 +92,10 @@ main (int argc, char *argv[])
   int stop_bits = 1;  /* 1 or 2 stop bits. */
   int parity = 'N';   /* No parity (N), Even (E), Odd (O), Mark (M) or Space (S) */
   const char* port_mode = "8N1";
+  struct timespec startup_timestamp;
+
+
+  clock_gettime(CLOCK_MONOTONIC, &startup_timestamp);
 
   memset (modem_device, '\0', sizeof(modem_device));
 
@@ -103,7 +117,7 @@ main (int argc, char *argv[])
           fprintf (stderr, " -m, --mode     Serial port mode (default: 8N1)\n");
           fprintf (stderr, " -d, --device   Serial device (eg. /dev/ttyS1)\n");
           fprintf (stderr, " -f, --flush    Flush output\n");
-          fprintf (stderr, " -s, --stamp    Prefix each line with datestamp\n");
+          fprintf (stderr, " -s, --stamp    Prefix each line with datestamp (old, iso, ms, us)\n");
           fprintf (stderr, " -t, --timeout  How long to run, in seconds.\n");
           fprintf (stderr, " -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
           fprintf (stderr, " -l, --limit    Limit line length.\n");
@@ -130,7 +144,24 @@ main (int argc, char *argv[])
         }
       else if (!strcmp (argv[i], "-s") || !strcmp (argv[i], "--stamp"))
         {
-          stamp = 1;
+          /* Next token is optional. */
+          if ((i + 1) >= argc) { stamp = FMT_OLD; }
+          else if (argv[i + i][0] == '-') { stamp = FMT_OLD; }
+          else
+            {
+              const char* fmt = argv[i + 1];
+              i++;
+
+              if (!strcmp(fmt, "old")) { stamp = FMT_OLD; }
+              else if (!strcmp(fmt, "iso")) { stamp = FMT_ISO; }
+              else if (!strcmp(fmt, "ms")) { stamp = FMT_MS; }
+              else if (!strcmp(fmt, "us")) { stamp = FMT_US; }
+              else
+                {
+                  fprintf (stderr, "%s: invalid timestamp format '%s'\n", argv[0], fmt);
+                  exit (0);
+                }
+            }
         }
       else if (!strcmp (argv[i], "-b") || !strcmp (argv[i], "--baud"))
         {
@@ -438,6 +469,7 @@ main (int argc, char *argv[])
             {
               if (!fgets (line, line_len_limit + 1, logfile))
                 {
+                  line[0] = 0;
                   if (ferror (logfile)) { break; }
                   if (feof (logfile)) { break; } /* Used with files, for testing. */
                 }
@@ -445,21 +477,18 @@ main (int argc, char *argv[])
               len = fread (line, 1, line_len_limit, logfile);
               if (!len)
                 {
+                  line[0] = 0;
                   if (ferror (logfile)) { break; }
                   if (feof (logfile)) { break; }
                 }
-              line[len - 1] = 0;
+              else
+                {
+                  line[len - 1] = 0;
+                }
             }
 
-            if (stamp)
-              {
-                time(&rawtime);
-                timeinfo = localtime(&rawtime);
-                timestr = asctime(timeinfo);
-                timestr[strlen(timestr) - 1] = 0;
-              } else {
-                timestr = NULL;
-              }
+            if (stamp) { timestr = make_timestamp(stamp, &startup_timestamp); }
+            else { timestr = NULL; }
 
             if(!len){ len = strlen(line); }
             print_line(line, len, buffer, timestr, output_fmt);
@@ -514,4 +543,121 @@ void print_line(char* line, int line_len, char* buffer, const char* time_stamp, 
           fputs (buffer, stdout);
         }
     }
+}
+
+
+/* Function to create timestamp according to timestamp format fmt. */
+const char* make_timestamp(int fmt, const struct timespec* start_time)
+{
+  char* timestr = NULL;
+  static char buffer[128];
+
+  if(fmt == FMT_OLD)
+    {
+      time_t rawtime;
+      struct tm *timeinfo;
+      time(&rawtime);
+      timeinfo = localtime(&rawtime);
+      timestr = asctime(timeinfo);
+      timestr[strlen(timestr) - 1] = 0;
+    }
+  else if(fmt == FMT_ISO)
+    {
+      /* YYYY-MM-DDTHH:MM:SS.sss */
+      struct timespec ts;
+      struct tm TM;
+      unsigned ms;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 0;
+      clock_gettime(CLOCK_REALTIME, &ts);
+      TM = *localtime(&ts.tv_sec);
+      ms = ts.tv_nsec / 1000000UL;
+      snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+            TM.tm_year + 1900, TM.tm_mon + 1, TM.tm_mday,
+            TM.tm_hour, TM.tm_min, TM.tm_sec, ms);
+
+      timestr = buffer;
+    }
+  else if(fmt == FMT_MS)
+    {
+      /* 32-bit number of milliseconds. */
+      struct timespec ts;
+      unsigned long long ms = 0;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 0;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+
+      /* Subtract start time from current time. */
+      ts.tv_sec -= start_time->tv_sec;
+      ts.tv_nsec -= start_time->tv_nsec;
+      if(ts.tv_nsec < 0)
+        {
+          ts.tv_sec--;
+          ts.tv_nsec += 1000000000LL;
+        }
+
+      /* Convert to milliseconds. */
+      ms = ts.tv_nsec / 1000000UL;
+      ms += ts.tv_sec * 1000U;
+      ms %= 1000000000ULL;   /* 9 decimal digits. */
+      snprintf(buffer, sizeof(buffer), "%09llu", ms);
+
+      /* Insert dots after every 3 digits. 000000136 => 000.000.136 */
+      /*                                   012345678    01234567890 */
+      buffer[11] = 0;
+      buffer[10] = buffer[8];
+      buffer[9] = buffer[7];
+      buffer[8] = buffer[6];
+      buffer[7] = '.';
+      buffer[6] = buffer[5];
+      buffer[5] = buffer[4];
+      buffer[4] = buffer[3];
+      buffer[3] = '.';
+
+      timestr = buffer;
+    }
+  else if(fmt == FMT_US)
+    {
+      /* 64-bit number of microseconds. */
+      struct timespec ts;
+      unsigned long long us = 0;
+      ts.tv_sec = 0;
+      ts.tv_nsec = 0;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+
+      /* Subtract start time from current time. */
+      ts.tv_sec -= start_time->tv_sec;
+      ts.tv_nsec -= start_time->tv_nsec;
+      if(ts.tv_nsec < 0)
+        {
+          ts.tv_sec--;
+          ts.tv_nsec += 1000000000LL;
+        }
+
+      /* Convert to microseconds. */
+      us = ts.tv_nsec / 1000UL;
+      us += ts.tv_sec * 1000000UL;
+      us %= 1000000000000ULL;   /* 12 decimal digits. */
+      snprintf(buffer, sizeof(buffer), "%012llu", us);
+
+      /* Insert dots after every 3 digits. 000000000136 => 000.000.000.136 */
+      /*                                   012345678901    012345678901234 */
+      buffer[15] = 0;
+      buffer[14] = buffer[11];
+      buffer[13] = buffer[10];
+      buffer[12] = buffer[9];
+      buffer[11] = '.';
+      buffer[10] = buffer[8];
+      buffer[9] = buffer[7];
+      buffer[8] = buffer[6];
+      buffer[7] = '.';
+      buffer[6] = buffer[5];
+      buffer[5] = buffer[4];
+      buffer[4] = buffer[3];
+      buffer[3] = '.';
+
+      timestr = buffer;
+    }
+
+  return timestr;
 }
