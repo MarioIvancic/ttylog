@@ -35,9 +35,9 @@ SET(ttylog_executable_HDRS
 ADD_EXECUTABLE(ttylog ${ttylog_executable_SRCS})
 
 # link against librt:
-if(UNIX AND NOT APPLE)
-    target_link_libraries(ttylog rt)
-endif()
+#if(UNIX AND NOT APPLE)
+#    target_link_libraries(ttylog rt)
+#endif()
 
 # add install targets:
 INSTALL(TARGETS ttylog DESTINATION sbin)

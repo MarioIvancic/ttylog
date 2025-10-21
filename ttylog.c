@@ -28,6 +28,7 @@
 #include <strings.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <time.h>
@@ -75,10 +76,6 @@ main (int argc, char *argv[])
   speed_t baud = 0;
   int stamp = 0;
   int flush = 0;
-  timer_t timerid;
-  struct sigevent sevp;
-  sevp.sigev_notify = SIGEV_SIGNAL;
-  sevp.sigev_signo = SIGINT;
   int fd;
   char line[1024];
   char buffer[4 * sizeof(line)];
@@ -93,7 +90,10 @@ main (int argc, char *argv[])
   int parity = 'N';   /* No parity (N), Even (E), Odd (O), Mark (M) or Space (S) */
   const char* port_mode = "8N1";
   struct timespec startup_timestamp;
-
+  int rts = -1;
+  int dtr = -1;
+  int timeout = 0;
+  int run_time = 0;
 
   clock_gettime(CLOCK_MONOTONIC, &startup_timestamp);
 
@@ -110,7 +110,7 @@ main (int argc, char *argv[])
       if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help"))
         {
           fprintf (stderr, "ttylog version %s\n", TTYLOG_VERSION);
-          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] > /path/to/logfile\n");
+          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] [--rts] [--dtr] > /path/to/logfile\n");
           fprintf (stderr, " -h, --help     This help\n");
           fprintf (stderr, " -v, --version  Version number\n");
           fprintf (stderr, " -b, --baud     Baud rate\n");
@@ -121,6 +121,8 @@ main (int argc, char *argv[])
           fprintf (stderr, " -t, --timeout  How long to run, in seconds.\n");
           fprintf (stderr, " -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
           fprintf (stderr, " -l, --limit    Limit line length.\n");
+          fprintf (stderr, " --rts          Set RTS line state (0 or 1).\n");
+          fprintf (stderr, " --dtr          Set DTR line state (0 or 1).\n");
           fprintf (stderr, "ttylog home page: <http://ttylog.sourceforge.net/>\n\n");
           exit (0);
         }
@@ -250,26 +252,12 @@ main (int argc, char *argv[])
               fprintf (stderr, "%s: invalid time span\n", argv[0]);
               exit(0);
             }
-          if (timer_create (CLOCK_REALTIME, &sevp, &timerid) == -1)
-            {
-              fprintf (stderr, "%s: unable to create timer: %s\n", argv[0], strerror(errno));
-              exit (0);
-            }
-          struct itimerspec new_value;
-          new_value.it_interval.tv_sec = 0;
-          new_value.it_interval.tv_nsec = 0;
-          int sec = atoi(argv[i + 1]);
-          if (!sec)
+
+          timeout = atoi(argv[i + 1]);
+          if (!timeout)
             {
               fprintf (stderr, "%s: invalid time span %s\n", argv[0], argv[i + 1]);
               exit(0);
-            }
-          new_value.it_value.tv_sec = atoi(argv[i + 1]);
-          new_value.it_value.tv_nsec = 0;
-          if (timer_settime(timerid, 0, &new_value, NULL) == -1)
-            {
-              fprintf (stderr, "%s: unable to set timer time: %s\n", argv[0], strerror(errno));
-              exit (0);
             }
 
           i++;
@@ -347,6 +335,40 @@ main (int argc, char *argv[])
           else
             {
               fprintf (stderr, "%s: invalid serial port mode %s: invalid stop bits.\n", argv[0], port_mode);
+              exit(0);
+            }
+        }
+      else if (!strcmp (argv[i], "--rts"))
+        {
+          if ((i + 1) >= argc)
+            {
+              fprintf (stderr, "%s: RTS line state is not specified\n", argv[0]);
+              exit(0);
+            }
+
+          i++;
+          if(argv[i][0] == '0') { rts = 0; }
+          else if(argv[i][0] == '1') { rts = 1; }
+          else
+            {
+              fprintf (stderr, "%s: invalid RTS line state '%s'\n", argv[0], argv[i]);
+              exit(0);
+            }
+        }
+      else if (!strcmp (argv[i], "--dtr"))
+        {
+          if ((i + 1) >= argc)
+            {
+              fprintf (stderr, "%s: DTR line state is not specified\n", argv[0]);
+              exit(0);
+            }
+
+          i++;
+          if(argv[i][0] == '0') { dtr = 0; }
+          else if(argv[i][0] == '1') { dtr = 1; }
+          else
+            {
+              fprintf (stderr, "%s: invalid DTR line state '%s'\n", argv[0], argv[i]);
               exit(0);
             }
         }
@@ -445,6 +467,30 @@ main (int argc, char *argv[])
       tcflush (fd, TCIFLUSH);
       tcsetattr (fd, TCSANOW, &newtio);
 
+      if(rts >= 0)
+        {
+          int flags = TIOCM_RTS;
+          if(rts) { ioctl(fd, TIOCMBIS, &flags); }
+          else { ioctl(fd, TIOCMBIC, &flags); }
+        }
+
+      if(dtr >= 0)
+        {
+          int flags = TIOCM_DTR;
+          if(rts) { ioctl(fd, TIOCMBIS, &flags); }
+          else { ioctl(fd, TIOCMBIC, &flags); }
+        }
+
+      /* Set low latency flag. Note that not all serial drivers support this feature. */
+#if defined(ASYNC_LOW_LATENCY)
+      {
+        struct serial_struct serial;
+        ioctl(fd, TIOCGSERIAL, &serial);
+        serial.flags |= ASYNC_LOW_LATENCY;
+        ioctl(fd, TIOCSSERIAL, &serial);
+      }
+#endif // defined
+
       /* Clear the device */
       {
         int flags = fcntl (fd, F_GETFL, 0);
@@ -461,7 +507,18 @@ main (int argc, char *argv[])
     {
       FD_ZERO (&rfds);
       FD_SET (fd, &rfds);
-      retval = select (fd + 1, &rfds, NULL, NULL, NULL);
+      if(timeout)
+        {
+          struct timeval tv;
+          tv.tv_sec = 1;
+          tv.tv_usec = 0;
+          retval = select (fd + 1, &rfds, NULL, NULL, &tv);
+        }
+      else
+        {
+          retval = select (fd + 1, &rfds, NULL, NULL, NULL);
+        }
+
       if (retval > 0)
         {
           size_t len = 0;
@@ -495,7 +552,12 @@ main (int argc, char *argv[])
 
           if (flush) { fflush(stdout); }
         }
-      else if (retval < 0) { break; }
+      else if (retval == 0) /* Timeout. */
+        {
+          if(timeout && (run_time >= timeout) ) break;
+          else if(timeout) { run_time++; }
+        }
+      else { break; } /* Error. */
     }
 
   fclose (logfile);
