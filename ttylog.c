@@ -75,7 +75,6 @@ main (int argc, char *argv[])
   int i;
   speed_t baud = 0;
   int stamp = 0;
-  int flush = 0;
   int fd;
   char line[1024];
   char buffer[4 * sizeof(line)];
@@ -110,13 +109,12 @@ main (int argc, char *argv[])
       if (!strcmp (argv[i], "-h") || !strcmp (argv[i], "--help"))
         {
           fprintf (stderr, "ttylog version %s\n", TTYLOG_VERSION);
-          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-m|--mode] [-d|--device] [-f|--flush] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] [--rts] [--dtr] > /path/to/logfile\n");
+          fprintf (stderr, "Usage:  ttylog [-b|--baud] [-m|--mode] [-d|--device] [-s|--stamp] [-t|--timeout] [-F|--format] [-l|--limit] [--rts] [--dtr] > /path/to/logfile\n");
           fprintf (stderr, " -h, --help     This help\n");
           fprintf (stderr, " -v, --version  Version number\n");
           fprintf (stderr, " -b, --baud     Baud rate\n");
           fprintf (stderr, " -m, --mode     Serial port mode (default: 8N1)\n");
           fprintf (stderr, " -d, --device   Serial device (eg. /dev/ttyS1)\n");
-          fprintf (stderr, " -f, --flush    Flush output\n");
           fprintf (stderr, " -s, --stamp    Prefix each line with datestamp (old, iso, ms, us)\n");
           fprintf (stderr, " -t, --timeout  How long to run, in seconds.\n");
           fprintf (stderr, " -F, --format   Set output format to one of a[scii] (default), h[ex], H[EX], r[aw].\n");
@@ -139,10 +137,6 @@ main (int argc, char *argv[])
           fprintf (stderr, "This is free software: you are free to change and redistribute it.\n");
           fprintf (stderr, "There is NO WARRANTY, to the extent permitted by law.\n\n");
           exit (0);
-        }
-      else if (!strcmp (argv[i], "-f") || !strcmp (argv[i], "--flush"))
-        {
-          flush = 1;
         }
       else if (!strcmp (argv[i], "-s") || !strcmp (argv[i], "--stamp"))
         {
@@ -386,7 +380,7 @@ main (int argc, char *argv[])
       exit (0);
     }
 
-  if (!strlen(modem_device)) {
+  if (!modem_device[0]) {
     fprintf (stderr, "%s: no device is set. Use %s -h for more information.\n", argv[0], argv[0]);
     exit (0);
   }
@@ -443,8 +437,13 @@ main (int argc, char *argv[])
 
       /* Ignore framing errors and parity errors. */
       newtio.c_iflag |= IGNPAR;
-      /* Ignore carriage return on input. */
-      newtio.c_iflag |= IGNCR;
+
+      if(output_fmt == FMT_ACSII)
+        {
+          /* Ignore carriage return on input. */
+          newtio.c_iflag |= IGNCR;
+        }
+
       /* Ignore BREAK condition on input. */
       newtio.c_iflag |= IGNBRK;
 
@@ -458,7 +457,7 @@ main (int argc, char *argv[])
 
       /* Set blocking read, no timeouts. */
       newtio.c_cc[VTIME] = 0;
-      newtio.c_cc[VMIN] = 1;
+      newtio.c_cc[VMIN] = 0;
 
       /* Only truly portable method of setting speed. */
       cfsetispeed (&newtio, baud);
@@ -500,8 +499,7 @@ main (int argc, char *argv[])
       }
     }
 
-  if (flush)
-    setbuf(stdout, NULL);
+  struct timeval select_timeout;
 
   while (1)
     {
@@ -509,10 +507,9 @@ main (int argc, char *argv[])
       FD_SET (fd, &rfds);
       if(timeout)
         {
-          struct timeval tv;
-          tv.tv_sec = 1;
-          tv.tv_usec = 0;
-          retval = select (fd + 1, &rfds, NULL, NULL, &tv);
+          select_timeout.tv_sec = 1;
+          select_timeout.tv_usec = 0;
+          retval = select (fd + 1, &rfds, NULL, NULL, &select_timeout);
         }
       else
         {
@@ -521,43 +518,66 @@ main (int argc, char *argv[])
 
       if (retval > 0)
         {
-          size_t len = 0;
+          ssize_t len = 0;
           if(output_fmt == FMT_ACSII)
             {
               if (!fgets (line, line_len_limit + 1, logfile))
                 {
                   line[0] = 0;
-                  if (ferror (logfile)) { break; }
-                  if (feof (logfile)) { break; } /* Used with files, for testing. */
+                  if (ferror (logfile))
+                    {
+                      fprintf (stderr, "%s: error reading serial device %s\n", argv[0], modem_device);
+                      break;
+                    }
+                  /* Used with files, for testing. */
+                  if (!serial_port && feof (logfile)) { break; }
+
+                  len = strlen(line);
                 }
-            } else {
-              len = fread (line, 1, line_len_limit, logfile);
-              if (!len)
+            }
+          else
+            {
+              len = read (fd, line, line_len_limit);
+              if (len < 0)
                 {
+                  int err = errno;
                   line[0] = 0;
-                  if (ferror (logfile)) { break; }
-                  if (feof (logfile)) { break; }
+                  if (err == EAGAIN || err == EWOULDBLOCK)
+                    {
+                      continue;
+                    }
+                  else
+                    {
+                      fprintf (stderr, "%s: error %d while reading serial device %s\n", argv[0], err, modem_device);
+                      break;
+                    }
+                }
+              else if(len > 0)
+                {
+                  line[len] = 0;
                 }
               else
                 {
-                  line[len - 1] = 0;
+                  /* EOF */
+                  break;
                 }
             }
 
             if (stamp) { timestr = make_timestamp(stamp, &startup_timestamp); }
             else { timestr = NULL; }
 
-            if(!len){ len = strlen(line); }
             print_line(line, len, buffer, timestr, output_fmt);
-
-          if (flush) { fflush(stdout); }
         }
       else if (retval == 0) /* Timeout. */
         {
           if(timeout && (run_time >= timeout) ) break;
           else if(timeout) { run_time++; }
         }
-      else { break; } /* Error. */
+      else
+        {
+          fprintf (stderr, "%s: error in select call\n", argv[0]);
+          break;
+        }
     }
 
   fclose (logfile);
@@ -582,29 +602,32 @@ void print_line(char* line, int line_len, char* buffer, const char* time_stamp, 
 
           printf ("[%s] %s\n", time_stamp, line);
         } else {
-          fputs (line, stdout);
+          puts (line);
         }
-    } else if(fmt == FMT_HEX_LC || fmt == FMT_HEX_UC) {
+    }
+  else if(fmt == FMT_HEX_LC || fmt == FMT_HEX_UC)
+    {
       int buff_len = 0;
       const char* hex_chars = (fmt == FMT_HEX_LC) ? hex_chars_lc : hex_chars_uc;
       for(int i = 0; i < line_len; i++)
         {
             unsigned char d = line[i];
+            if (i) { buffer[buff_len++] = ' '; }
             buffer[buff_len++] = hex_chars[(d >> 4) & 0x0F];
             buffer[buff_len++] = hex_chars[d & 0x0F];
-            buffer[buff_len++] = ' ';
         }
 
-      buffer[buff_len++] = '\n';
       buffer[buff_len] = 0;
 
       if (time_stamp)
         {
-          printf ("[%s] %s", time_stamp, buffer);
+          printf ("[%s] %s\n", time_stamp, buffer);
         } else {
-          fputs (buffer, stdout);
+          printf ("%s\n", buffer);
         }
     }
+
+  fflush(stdout);
 }
 
 
