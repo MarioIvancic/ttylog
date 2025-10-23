@@ -33,6 +33,7 @@
 #include <signal.h>
 #include <time.h>
 #include <errno.h>
+#include <inttypes.h>
 
 #include "config.h"
 
@@ -58,9 +59,17 @@ enum
 };
 
 
+typedef struct
+{
+  char* work_buff;
+  int line_len_limit;
+  int line_len;
+} print_data_ctx_t;
+
+
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
-void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt);
+void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt);
 
 
 /* Function to create timestamp according to timestamp format fmt. */
@@ -76,13 +85,12 @@ main (int argc, char *argv[])
   speed_t baud = 0;
   int stamp = 0;
   int fd;
-  char line[1024];
-  char buffer[4 * sizeof(line)];
+  char raw_data[1024];
+  char buffer[4 * sizeof(raw_data)];
   char modem_device[512];
   struct termios oldtio, newtio;
   const char* timestr;
   int output_fmt = FMT_ACSII;
-  int line_len_limit = sizeof(line) - 1;
   const char* baud_str = NULL;
   int data_bits = 8;  /* 7 or 8 data bits. */
   int stop_bits = 1;  /* 1 or 2 stop bits. */
@@ -93,6 +101,11 @@ main (int argc, char *argv[])
   int dtr = -1;
   int timeout = 0;
   int run_time = 0;
+  print_data_ctx_t print_data_ctx;
+
+  print_data_ctx.work_buff = buffer;
+  print_data_ctx.line_len_limit = sizeof(raw_data) - 1;
+  print_data_ctx.line_len = 0;
 
   clock_gettime(CLOCK_MONOTONIC, &startup_timestamp);
 
@@ -284,14 +297,13 @@ main (int argc, char *argv[])
             exit(0);
           }
 
-          int len = atoi(argv[i + 1]);
-          if (!len)
+          print_data_ctx.line_len_limit = atoi(argv[i + 1]);
+          if (!print_data_ctx.line_len_limit)
           {
             fprintf (stderr, "%s: invalid line length limit %s\n", argv[0], argv[i + 1]);
             exit(0);
           }
 
-          line_len_limit = len;
           i++;
         }
       else if (!strcmp (argv[i], "-m") || !strcmp (argv[i], "--mode"))
@@ -494,7 +506,7 @@ main (int argc, char *argv[])
       {
         int flags = fcntl (fd, F_GETFL, 0);
         fcntl (fd, F_SETFL, flags | O_NONBLOCK);
-        while (fread (line, 1, sizeof(line), logfile) > 0 );
+        while (fread (raw_data, 1, sizeof(raw_data), logfile) > 0 );
         fcntl (fd, F_SETFL, flags);
       }
     }
@@ -521,9 +533,9 @@ main (int argc, char *argv[])
           ssize_t len = 0;
           if(output_fmt == FMT_ACSII)
             {
-              if (!fgets (line, line_len_limit + 1, logfile))
+              if (!fgets (raw_data, sizeof(raw_data), logfile))
                 {
-                  line[0] = 0;
+                  raw_data[0] = 0;
                   if (ferror (logfile))
                     {
                       fprintf (stderr, "%s: error reading serial device %s\n", argv[0], modem_device);
@@ -532,16 +544,16 @@ main (int argc, char *argv[])
                   /* Used with files, for testing. */
                   if (!serial_port && feof (logfile)) { break; }
 
-                  len = strlen(line);
+                  len = strlen(raw_data);
                 }
             }
           else
             {
-              len = read (fd, line, line_len_limit);
+              len = read (fd, raw_data, sizeof(raw_data) - 1);
               if (len < 0)
                 {
                   int err = errno;
-                  line[0] = 0;
+                  raw_data[0] = 0;
                   if (err == EAGAIN || err == EWOULDBLOCK)
                     {
                       continue;
@@ -554,7 +566,7 @@ main (int argc, char *argv[])
                 }
               else if(len > 0)
                 {
-                  line[len] = 0;
+                  raw_data[len] = 0;
                 }
               else
                 {
@@ -566,7 +578,7 @@ main (int argc, char *argv[])
             if (stamp) { timestr = make_timestamp(stamp, &startup_timestamp); }
             else { timestr = NULL; }
 
-            print_line(line, len, buffer, timestr, output_fmt);
+            print_data(raw_data, len, &print_data_ctx, timestr, output_fmt);
         }
       else if (retval == 0) /* Timeout. */
         {
@@ -585,49 +597,77 @@ main (int argc, char *argv[])
   return 0;
 }
 
+
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
-void print_line(char* line, int line_len, char* buffer, const char* time_stamp, int fmt)
+void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt)
 {
   static const char* hex_chars_lc = "0123456789abcdef";
   static const char* hex_chars_uc = "0123456789ABCDEF";
 
+  int offset = 0;
+
   if(fmt == FMT_ACSII || fmt == FMT_RAW)
     {
-      if (time_stamp)
+      while(raw_data_len)
         {
-          /* If timestamps are printed we have to be sure that timestamp is at
-          the beginning of the line. */
-          if(line[line_len - 1] == '\n') { line[line_len - 1] = 0; }
+          if (time_stamp)
+            {
+              if(ctx->line_len != 0) { puts("\n"); }
+              printf ("[%s] ", time_stamp);
+              ctx->line_len = 0;
+            }
 
-          printf ("[%s] %s\n", time_stamp, line);
-        } else {
-          puts (line);
+          int len = ctx->line_len_limit - ctx->line_len;
+          if(len > raw_data_len) { len = raw_data_len; }
+          memcpy(ctx->work_buff, raw_data + offset, len);
+          offset += len;
+          ctx->line_len += len;
+          raw_data_len -= len;
+          if(ctx->line_len >= ctx->line_len_limit) { ctx->line_len = 0; }
+
+          // if(ctx->work_buff[len - 1] == '\n') { ctx->work_buff[len - 1] = 0; }
+          // else { ctx->work_buff[len] = 0; }
+          ctx->work_buff[len] = 0;
+
+          puts(ctx->work_buff);
+          fflush(stdout);
         }
     }
   else if(fmt == FMT_HEX_LC || fmt == FMT_HEX_UC)
     {
-      int buff_len = 0;
       const char* hex_chars = (fmt == FMT_HEX_LC) ? hex_chars_lc : hex_chars_uc;
-      for(int i = 0; i < line_len; i++)
-        {
-            unsigned char d = line[i];
-            if (i) { buffer[buff_len++] = ' '; }
-            buffer[buff_len++] = hex_chars[(d >> 4) & 0x0F];
-            buffer[buff_len++] = hex_chars[d & 0x0F];
-        }
+      while(raw_data_len)
+      {
+        if (time_stamp)
+          {
+            if(ctx->line_len != 0) { puts("\n"); }
+            printf ("[%s] ", time_stamp);
+            ctx->line_len = 0;
+          }
 
-      buffer[buff_len] = 0;
+        int len = ctx->line_len_limit - ctx->line_len;
+        if(len > raw_data_len) { len = raw_data_len; }
 
-      if (time_stamp)
-        {
-          printf ("[%s] %s\n", time_stamp, buffer);
-        } else {
-          printf ("%s\n", buffer);
-        }
+        int buff_len = 0;
+        for(int i = 0; i < len; i++)
+          {
+              unsigned char d = raw_data[offset + i];
+              if (i) { ctx->work_buff[buff_len++] = ' '; }
+              ctx->work_buff[buff_len++] = hex_chars[(d >> 4) & 0x0F];
+              ctx->work_buff[buff_len++] = hex_chars[d & 0x0F];
+          }
+
+        ctx->work_buff[buff_len] = 0;
+        offset += len;
+        ctx->line_len += len;
+        raw_data_len -= len;
+        if(ctx->line_len >= ctx->line_len_limit) { ctx->line_len = 0; }
+
+        puts(ctx->work_buff);
+        fflush(stdout);
+      }
     }
-
-  fflush(stdout);
 }
 
 
@@ -667,7 +707,7 @@ const char* make_timestamp(int fmt, const struct timespec* start_time)
     {
       /* 32-bit number of milliseconds. */
       struct timespec ts;
-      unsigned long long ms = 0;
+      uint64_t ms = 0;
       ts.tv_sec = 0;
       ts.tv_nsec = 0;
       clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -685,7 +725,7 @@ const char* make_timestamp(int fmt, const struct timespec* start_time)
       ms = ts.tv_nsec / 1000000UL;
       ms += ts.tv_sec * 1000U;
       ms %= 1000000000ULL;   /* 9 decimal digits. */
-      snprintf(buffer, sizeof(buffer), "%09llu", ms);
+      snprintf(buffer, sizeof(buffer), "%09" PRIu64, ms);
 
       /* Insert dots after every 3 digits. 000000136 => 000.000.136 */
       /*                                   012345678    01234567890 */
@@ -705,7 +745,7 @@ const char* make_timestamp(int fmt, const struct timespec* start_time)
     {
       /* 64-bit number of microseconds. */
       struct timespec ts;
-      unsigned long long us = 0;
+      uint64_t us = 0;
       ts.tv_sec = 0;
       ts.tv_nsec = 0;
       clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -723,7 +763,7 @@ const char* make_timestamp(int fmt, const struct timespec* start_time)
       us = ts.tv_nsec / 1000UL;
       us += ts.tv_sec * 1000000UL;
       us %= 1000000000000ULL;   /* 12 decimal digits. */
-      snprintf(buffer, sizeof(buffer), "%012llu", us);
+      snprintf(buffer, sizeof(buffer), "%012" PRIu64, us);
 
       /* Insert dots after every 3 digits. 000000000136 => 000.000.000.136 */
       /*                                   012345678901    012345678901234 */
