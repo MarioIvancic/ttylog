@@ -37,7 +37,6 @@
 
 #include "config.h"
 
-#define BAUDN 13
 
 /* Constants for output format. */
 enum
@@ -74,6 +73,9 @@ void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const c
 
 /* Function to create timestamp according to timestamp format fmt. */
 const char* make_timestamp(int fmt, const struct timespec* start_time);
+
+/* Select baud rate based on user input. */
+int select_baud_rate(const char* baud_str);
 
 int
 main (int argc, char *argv[])
@@ -182,64 +184,7 @@ main (int argc, char *argv[])
 
           baud_str = argv[i + 1];
           i++;
-          long long b = strtoll(baud_str, NULL, 10);
-          switch(b)
-          {
-            case 300: baud = B300; break;
-            case 600: baud = B600; break;
-            case 1200: baud = B1200; break;
-            case 2400: baud = B2400; break;
-            case 4800: baud = B4800; break;
-            case 9600: baud = B9600; break;
-            case 19200: baud = B19200; break;
-#if defined(B28800)
-            case 28800: baud = B28800; break;
-#endif // defined
-            case 38400: baud = B38400; break;
-            case 57600: baud = B57600; break;
-#if defined(B115200)
-            case 115200: baud = B115200; break;
-#endif // defined
-#if defined(B230400)
-            case 230400: baud = B230400; break;
-#endif // defined
-#if defined(B460800)
-            case 460800: baud = B460800; break;
-#endif // defined
-#if defined(B500000)
-            case 500000: baud = B500000; break;
-#endif // defined
-#if defined(B576000)
-            case 576000: baud = B576000; break;
-#endif // defined
-#if defined(B921600)
-            case 921600: baud = B921600; break;
-#endif // defined
-#if defined(B1000000)
-            case 1000000: baud = B1000000; break;
-#endif // defined
-#if defined(B1152000)
-            case 1152000: baud = B1152000; break;
-#endif // defined
-#if defined(B1500000)
-            case 1500000: baud = B1500000; break;
-#endif // defined
-#if defined(B2000000)
-            case 2000000: baud = B2000000; break;
-#endif // defined
-#if defined(B2500000)
-            case 2500000: baud = B2500000; break;
-#endif // defined
-#if defined(B3000000)
-            case 3000000: baud = B3000000; break;
-#endif // defined
-#if defined(B3500000)
-            case 3500000: baud = B3500000; break;
-#endif // defined
-#if defined(B4000000)
-            case 4000000: baud = B4000000; break;
-#endif // defined
-          }
+          baud = select_baud_rate(baud_str);
         }
       else if (!strcmp (argv[i], "-d") || !strcmp (argv[i], "--device"))
         {
@@ -785,4 +730,70 @@ const char* make_timestamp(int fmt, const struct timespec* start_time)
     }
 
   return timestr;
+}
+
+
+int select_baud_rate(const char* baud_str)
+{
+	long long b = strtoll(baud_str, NULL, 10);
+	int baud = 0;
+  switch(b)
+    {
+      case 300: baud = B300; break;
+      case 600: baud = B600; break;
+      case 1200: baud = B1200; break;
+      case 2400: baud = B2400; break;
+      case 4800: baud = B4800; break;
+      case 9600: baud = B9600; break;
+      case 19200: baud = B19200; break;
+#if defined(B28800)
+      case 28800: baud = B28800; break;
+#endif // defined
+      case 38400: baud = B38400; break;
+      case 57600: baud = B57600; break;
+#if defined(B115200)
+      case 115200: baud = B115200; break;
+#endif // defined
+#if defined(B230400)
+      case 230400: baud = B230400; break;
+#endif // defined
+#if defined(B460800)
+      case 460800: baud = B460800; break;
+#endif // defined
+#if defined(B500000)
+      case 500000: baud = B500000; break;
+#endif // defined
+#if defined(B576000)
+      case 576000: baud = B576000; break;
+#endif // defined
+#if defined(B921600)
+      case 921600: baud = B921600; break;
+#endif // defined
+#if defined(B1000000)
+      case 1000000: baud = B1000000; break;
+#endif // defined
+#if defined(B1152000)
+      case 1152000: baud = B1152000; break;
+#endif // defined
+#if defined(B1500000)
+      case 1500000: baud = B1500000; break;
+#endif // defined
+#if defined(B2000000)
+      case 2000000: baud = B2000000; break;
+#endif // defined
+#if defined(B2500000)
+      case 2500000: baud = B2500000; break;
+#endif // defined
+#if defined(B3000000)
+      case 3000000: baud = B3000000; break;
+#endif // defined
+#if defined(B3500000)
+      case 3500000: baud = B3500000; break;
+#endif // defined
+#if defined(B4000000)
+      case 4000000: baud = B4000000; break;
+#endif // defined
+    }
+
+  return baud;
 }
