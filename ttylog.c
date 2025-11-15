@@ -37,6 +37,8 @@
 
 #include "config.h"
 
+/* #define DEBUG 1 */
+
 
 /* Constants for output format. */
 enum
@@ -63,12 +65,13 @@ typedef struct
   char* work_buff;
   int line_len_limit;
   int line_len;
+  int new_line;
 } print_data_ctx_t;
 
 
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
-void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt);
+void print_data(const char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt);
 
 
 /* Function to create timestamp according to timestamp format fmt. */
@@ -76,6 +79,10 @@ const char* make_timestamp(int fmt, const struct timespec* start_time);
 
 /* Select baud rate based on user input. */
 int select_baud_rate(const char* baud_str);
+
+#ifdef DEBUG
+FILE* debug_file;
+#endif // DEBUG
 
 int
 main (int argc, char *argv[])
@@ -108,10 +115,15 @@ main (int argc, char *argv[])
   print_data_ctx.work_buff = buffer;
   print_data_ctx.line_len_limit = sizeof(raw_data) - 1;
   print_data_ctx.line_len = 0;
+  print_data_ctx.new_line = 1;
 
   clock_gettime(CLOCK_MONOTONIC, &startup_timestamp);
 
   memset (modem_device, '\0', sizeof(modem_device));
+
+#ifdef DEBUG
+  debug_file = fopen ("debug-out.txt", "a");
+#endif // DEBUG
 
   if (argc < 2)
     {
@@ -157,22 +169,30 @@ main (int argc, char *argv[])
         {
           /* Next token is optional. */
           if ((i + 1) >= argc) { stamp = FMT_OLD; }
-          else if (argv[i + i][0] == '-') { stamp = FMT_OLD; }
           else
             {
               const char* fmt = argv[i + 1];
-              i++;
 
-              if (!strcmp(fmt, "old")) { stamp = FMT_OLD; }
-              else if (!strcmp(fmt, "iso")) { stamp = FMT_ISO; }
-              else if (!strcmp(fmt, "ms")) { stamp = FMT_MS; }
-              else if (!strcmp(fmt, "us")) { stamp = FMT_US; }
+              if (fmt[0] == '-') { stamp = FMT_OLD; }
               else
                 {
-                  fprintf (stderr, "%s: invalid timestamp format '%s'\n", argv[0], fmt);
-                  exit (0);
+                  i++;
+
+                  if (!strcmp(fmt, "old")) { stamp = FMT_OLD; }
+                  else if (!strcmp(fmt, "iso")) { stamp = FMT_ISO; }
+                  else if (!strcmp(fmt, "ms")) { stamp = FMT_MS; }
+                  else if (!strcmp(fmt, "us")) { stamp = FMT_US; }
+                  else
+                    {
+                      fprintf (stderr, "%s: invalid timestamp format '%s'\n", argv[0], fmt);
+                      exit (0);
+                    }
                 }
             }
+#ifdef DEBUG
+          fprintf(debug_file, "Using timestamp format %d\n", stamp);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-b") || !strcmp (argv[i], "--baud"))
         {
@@ -185,6 +205,10 @@ main (int argc, char *argv[])
           baud_str = argv[i + 1];
           i++;
           baud = select_baud_rate(baud_str);
+#ifdef DEBUG
+          fprintf(debug_file, "Using baudrate of %d bps\n", baud);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-d") || !strcmp (argv[i], "--device"))
         {
@@ -196,6 +220,10 @@ main (int argc, char *argv[])
 
           strncpy (modem_device, argv[i + 1], sizeof(modem_device) - 1);
           i++;
+#ifdef DEBUG
+          fprintf(debug_file, "Using serial port %s\n", modem_device);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-t") || !strcmp (argv[i], "--timeout"))
         {
@@ -213,6 +241,10 @@ main (int argc, char *argv[])
             }
 
           i++;
+#ifdef DEBUG
+          fprintf(debug_file, "Using timeout value of %d s\n", timeout);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-F") || !strcmp (argv[i], "--format"))
         {
@@ -233,6 +265,11 @@ main (int argc, char *argv[])
               exit(0);
             }
           i++;
+
+#ifdef DEBUG
+          fprintf(debug_file, "Using output format %d s\n", output_fmt);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-l") || !strcmp (argv[i], "--limit"))
         {
@@ -250,6 +287,11 @@ main (int argc, char *argv[])
           }
 
           i++;
+
+#ifdef DEBUG
+          fprintf(debug_file, "Using line length limit of %d bytes\n", print_data_ctx.line_len_limit);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "-m") || !strcmp (argv[i], "--mode"))
         {
@@ -288,6 +330,11 @@ main (int argc, char *argv[])
               fprintf (stderr, "%s: invalid serial port mode %s: invalid stop bits.\n", argv[0], port_mode);
               exit(0);
             }
+
+#ifdef DEBUG
+          fprintf(debug_file, "Using serial port mode %s (%d data bits, %d stop bits, parity: %c\n", port_mode, data_bits, stop_bits, parity);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "--rts"))
         {
@@ -305,6 +352,11 @@ main (int argc, char *argv[])
               fprintf (stderr, "%s: invalid RTS line state '%s'\n", argv[0], argv[i]);
               exit(0);
             }
+
+#ifdef DEBUG
+          fprintf(debug_file, "Using RTS value %d\n", rts);
+          fflush(debug_file);
+#endif // DEBUG
         }
       else if (!strcmp (argv[i], "--dtr"))
         {
@@ -322,6 +374,11 @@ main (int argc, char *argv[])
               fprintf (stderr, "%s: invalid DTR line state '%s'\n", argv[0], argv[i]);
               exit(0);
             }
+
+#ifdef DEBUG
+          fprintf(debug_file, "Using DTR value %d\n", dtr);
+          fflush(debug_file);
+#endif // DEBUG
         }
     }
 
@@ -350,11 +407,21 @@ main (int argc, char *argv[])
     }
   fd = fileno (logfile);
 
+#ifdef DEBUG
+  fprintf(debug_file, "Opened serial port %s, file descriptor %d\n", modem_device, fd);
+  fflush(debug_file);
+#endif // DEBUG
+
   /* Check are we connected to serial port and if yes, save current serial port settings */
   int serial_port = (0 == tcgetattr (fd, &oldtio));
   if(serial_port)
     {
       memset (&newtio, 0, sizeof (newtio)); /* clear struct for new port settings */
+
+#ifdef DEBUG
+      fprintf(debug_file, "Connected to real serial device, not file\n");
+      fflush(debug_file);
+#endif // DEBUG
 
       /* Enable RTS/CTS (hardware) flow control. */
       /* newtio.c_cflag |= CRTSCTS; */
@@ -488,9 +555,8 @@ main (int argc, char *argv[])
                     }
                   /* Used with files, for testing. */
                   if (!serial_port && feof (logfile)) { break; }
-
-                  len = strlen(raw_data);
                 }
+              len = strlen(raw_data);
             }
           else
             {
@@ -520,10 +586,13 @@ main (int argc, char *argv[])
                 }
             }
 
-            if (stamp) { timestr = make_timestamp(stamp, &startup_timestamp); }
-            else { timestr = NULL; }
+          if(len)
+            {
+              if (stamp) { timestr = make_timestamp(stamp, &startup_timestamp); }
+              else { timestr = NULL; }
 
-            print_data(raw_data, len, &print_data_ctx, timestr, output_fmt);
+              print_data(raw_data, len, &print_data_ctx, timestr, output_fmt);
+            }
         }
       else if (retval == 0) /* Timeout. */
         {
@@ -545,37 +614,91 @@ main (int argc, char *argv[])
 
 /* Function that prints line in specified output format. Timestamp is optional.
    Buffer should be at least 4 times the line length. */
-void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt)
+void print_data(const char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const char* time_stamp, int fmt)
 {
   static const char* hex_chars_lc = "0123456789abcdef";
   static const char* hex_chars_uc = "0123456789ABCDEF";
 
   int offset = 0;
 
-  if(fmt == FMT_ACSII || fmt == FMT_RAW)
+#ifdef DEBUG
+  fprintf(debug_file, "print_data(len=%d, line_len=%d, line_len_limit=%d, new_line=%d)\n", raw_data_len, ctx->line_len, ctx->line_len_limit, ctx->new_line);
+  fprintf(debug_file, "data: '%s'\n", raw_data);
+  fflush(debug_file);
+#endif // DEBUG
+
+  if(fmt == FMT_ACSII)
     {
       while(raw_data_len)
         {
-          if (time_stamp)
-            {
-              if(ctx->line_len != 0) { puts("\n"); }
-              printf ("[%s] ", time_stamp);
-              ctx->line_len = 0;
-            }
+          if (time_stamp) { printf ("[%s] ", time_stamp); }
 
+          int print_nl = 0;
           int len = ctx->line_len_limit - ctx->line_len;
           if(len > raw_data_len) { len = raw_data_len; }
+          else { print_nl = 1; }
           memcpy(ctx->work_buff, raw_data + offset, len);
           offset += len;
           ctx->line_len += len;
           raw_data_len -= len;
           if(ctx->line_len >= ctx->line_len_limit) { ctx->line_len = 0; }
 
-          // if(ctx->work_buff[len - 1] == '\n') { ctx->work_buff[len - 1] = 0; }
-          // else { ctx->work_buff[len] = 0; }
-          ctx->work_buff[len] = 0;
+          if(print_nl)
+            {
+              ctx->work_buff[len] = '\n';
+              ctx->work_buff[len + 1] = 0;
+            }
+          else
+            {
+              ctx->work_buff[len] = 0;
+            }
 
-          puts(ctx->work_buff);
+#ifdef DEBUG
+          fprintf(debug_file, "workbuff: '%s'\n", ctx->work_buff);
+          fflush(debug_file);
+#endif // DEBUG
+
+          fputs (ctx->work_buff, stdout);
+          fflush(stdout);
+        }
+    }
+  if(fmt == FMT_RAW)
+    {
+      while(raw_data_len)
+        {
+          if (time_stamp)
+            {
+              if(ctx->line_len != 0) { fputs("\n", stdout); }
+              printf ("[%s] ", time_stamp);
+              ctx->line_len = 0;
+            }
+
+          int print_nl = 0;
+          int len = ctx->line_len_limit - ctx->line_len;
+          if(len > raw_data_len) { len = raw_data_len; }
+          else { print_nl = 1; }
+          memcpy(ctx->work_buff, raw_data + offset, len);
+          offset += len;
+          ctx->line_len += len;
+          raw_data_len -= len;
+          if(ctx->line_len >= ctx->line_len_limit) { ctx->line_len = 0; }
+
+          if(print_nl)
+            {
+              ctx->work_buff[len] = '\n';
+              ctx->work_buff[len + 1] = 0;
+            }
+          else
+            {
+              ctx->work_buff[len] = 0;
+            }
+
+#ifdef DEBUG
+          fprintf(debug_file, "workbuff: '%s'\n", ctx->work_buff);
+          fflush(debug_file);
+#endif // DEBUG
+
+          fputs(ctx->work_buff, stdout);
           fflush(stdout);
         }
     }
@@ -586,30 +709,45 @@ void print_data(char* raw_data, int raw_data_len, print_data_ctx_t* ctx, const c
       {
         if (time_stamp)
           {
-            if(ctx->line_len != 0) { puts("\n"); }
+            if(ctx->line_len != 0) { fputs("\n", stdout); }
             printf ("[%s] ", time_stamp);
             ctx->line_len = 0;
           }
 
+        int print_nl = 0;
         int len = ctx->line_len_limit - ctx->line_len;
         if(len > raw_data_len) { len = raw_data_len; }
+        else { print_nl = 1; }
 
         int buff_len = 0;
         for(int i = 0; i < len; i++)
           {
               unsigned char d = raw_data[offset + i];
-              if (i) { ctx->work_buff[buff_len++] = ' '; }
+              if (i || ctx->line_len) { ctx->work_buff[buff_len++] = ' '; }
               ctx->work_buff[buff_len++] = hex_chars[(d >> 4) & 0x0F];
               ctx->work_buff[buff_len++] = hex_chars[d & 0x0F];
           }
 
-        ctx->work_buff[buff_len] = 0;
+        if(print_nl)
+          {
+            ctx->work_buff[buff_len] = '\n';
+            ctx->work_buff[buff_len + 1] = 0;
+          }
+        else
+          {
+            ctx->work_buff[buff_len] = 0;
+          }
         offset += len;
         ctx->line_len += len;
         raw_data_len -= len;
         if(ctx->line_len >= ctx->line_len_limit) { ctx->line_len = 0; }
 
-        puts(ctx->work_buff);
+#ifdef DEBUG
+        fprintf(debug_file, "workbuff: '%s'\n", ctx->work_buff);
+        fflush(debug_file);
+#endif // DEBUG
+
+        fputs(ctx->work_buff, stdout);
         fflush(stdout);
       }
     }
