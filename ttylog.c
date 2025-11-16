@@ -65,7 +65,6 @@ typedef struct
   char* work_buff;
   int line_len_limit;
   int line_len;
-  int new_line;
 } print_data_ctx_t;
 
 
@@ -115,7 +114,6 @@ main (int argc, char *argv[])
   print_data_ctx.work_buff = buffer;
   print_data_ctx.line_len_limit = sizeof(raw_data) - 1;
   print_data_ctx.line_len = 0;
-  print_data_ctx.new_line = 1;
 
   clock_gettime(CLOCK_MONOTONIC, &startup_timestamp);
 
@@ -622,7 +620,7 @@ void print_data(const char* raw_data, int raw_data_len, print_data_ctx_t* ctx, c
   int offset = 0;
 
 #ifdef DEBUG
-  fprintf(debug_file, "print_data(len=%d, line_len=%d, line_len_limit=%d, new_line=%d)\n", raw_data_len, ctx->line_len, ctx->line_len_limit, ctx->new_line);
+  fprintf(debug_file, "print_data(len=%d, line_len=%d, line_len_limit=%d)\n", raw_data_len, ctx->line_len, ctx->line_len_limit);
   fprintf(debug_file, "data: '%s'\n", raw_data);
   fflush(debug_file);
 #endif // DEBUG
